@@ -283,55 +283,9 @@ class Manager(object):
 
         start = None
 
-        result_counter = 0
-        task_recv_counter = 0
-        task_sent_counter = 0
-
         logger.info("Loop start")
         while not self._kill_event.is_set():
             time.sleep(LOOP_SLOWDOWN)
-
-            # In this block we attempt to probe MPI for a set amount of time,
-            # and if we have exhausted all available MPI events, we move on
-            # to the next block. The timer and counter trigger balance
-            # fairness and responsiveness.
-            # timer = time.time() + 0.05
-            # counter = min(10, comm.size)
-            # while time.time() < timer:
-            # while self.ready_worker_queue.qsize() < self.worker_pool_sz:
-            #     info = MPI.Status()
-            #
-            #     # if counter > 10:
-            #     #     logger.debug("Hit max mpi events per round")
-            #     #     break
-            #
-            #     if not self.comm.Iprobe(status=info):
-            #         # logger.debug("Timer expired, processed {} mpi events".format(counter))
-            #         # break
-            #         logger.debug("No events observed. Retrying...")
-            #         time.sleep(0.010)
-            #         continue
-            #     else:
-            #         tag = info.Get_tag()
-            #         logger.info("Message with tag {} received".format(tag))
-            #
-            #         # counter += 1
-            #         if tag == RESULT_TAG:
-            #             result = self.recv_result_from_workers()
-            #             self.pending_result_queue.put(result)
-            #             result_counter += 1
-            #
-            #         elif tag == TASK_REQUEST_TAG:
-            #             worker_rank = self.recv_task_request_from_workers()
-            #             self.ready_worker_queue.put(worker_rank)
-            #
-            #         else:
-            #             logger.error("Unknown tag {} - ignoring this message and continuing".format(tag))
-
-            # available_worker_cnt = self.ready_worker_queue.qsize()
-            # available_task_cnt = self.pending_task_queue.qsize()
-            # logger.debug("[MAIN] Ready workers: {} Ready tasks: {}".format(available_worker_cnt,
-            #                                                                available_task_cnt))
 
             if not self.workers_ready:
                 logger.info(f"waiting for ready msg")
@@ -341,18 +295,6 @@ class Manager(object):
                 self.workers_ready = True
 
             logger.info(f"{self.worker_pool_sz} workers available")
-
-            # this_round = min(available_worker_cnt, available_task_cnt)
-            # for i in range(this_round):
-            #     worker_rank = self.ready_worker_queue.get()
-            #     task = self.pending_task_queue.get()
-            #     comm.send(task, dest=worker_rank, tag=worker_rank)
-            #     task_sent_counter += 1
-            #     logger.debug("Assigning worker:{} task:{}".format(worker_rank, task['task_id']))
-
-            # all workers are available ATM. bcast the job
-            # pending_tasks = self.pending_task_queue.qsize()
-            # logging.info(f"tasks pending {pending_tasks}")
 
             if not self.pending_task_queue.empty():
                 task = self.pending_task_queue.get()
@@ -370,11 +312,6 @@ class Manager(object):
 
             if not start:
                 start = time.time()
-
-            # logger.debug("Tasks recvd:{} Tasks dispatched:{} Results recvd:{}".format(
-            #     task_recv_counter, task_sent_counter, result_counter))
-            # print("[{}] Received: {}".format(self.identity, msg))
-            # time.sleep(random.randint(4,10)/10)
 
         self._task_puller_thread.join()
         self._result_pusher_thread.join()
@@ -434,18 +371,8 @@ def worker(comm: MPI.Comm, rank: int, local_comm: MPI.Comm, local_rank: int):
     comm.Barrier()
     logger.debug("Synced")
 
-    # task_request = b'TREQ'
-
     while True:
-        # comm.send(task_request, dest=0, tag=TASK_REQUEST_TAG)
-        # The worker will receive {'task_id':<tid>, 'buffer':<buf>}
-        # req = comm.recv(source=0, tag=rank)
         comm.barrier()
-
-        # send 1 to root
-        # logger.info("sending ready message")
-        # comm.reduce(1, mpi4py.MPI.SUM, root=0)
-        # logger.info("ready message sent")
 
         # wait for a task from the master
         req = None
@@ -466,7 +393,6 @@ def worker(comm: MPI.Comm, rank: int, local_comm: MPI.Comm, local_rank: int):
             logger.debug("Result: {}".format(result))
 
         pkl_package = pickle.dumps(result_package)
-        # comm.send(pkl_package, dest=0, tag=RESULT_TAG)
         comm.gather(pkl_package, root=0)
 
 
