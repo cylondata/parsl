@@ -1,27 +1,25 @@
 #!/usr/bin/env python3
 
 import argparse
+import datetime
+import json
 import logging
 import os
-import sys
-import platform
-# import random
-import threading
 import pickle
-import time
-import datetime
+import platform
 import queue
+import sys
+import threading
+import time
 import uuid
 
-import mpi4py.MPI
 import zmq
-import json
-
 from mpi4py import MPI
 
+from parsl.app.cylon import CylonDistResult
 from parsl.app.errors import RemoteExceptionWrapper
-from parsl.version import VERSION as PARSL_VERSION
 from parsl.serialize import unpack_apply_message, serialize
+from parsl.version import VERSION as PARSL_VERSION
 
 RESULT_TAG = 10
 TASK_REQUEST_TAG = 11
@@ -29,6 +27,27 @@ TASK_REQUEST_TAG = 11
 LOOP_SLOWDOWN = 0.0  # in seconds
 
 HEARTBEAT_CODE = (2 ** 32) - 1
+
+
+def _create_final_result(tid, results):
+    # success = True
+    data = []
+    for res in results:
+        # if an error has occurred, raise it
+        if not res[0]:
+            result_package = {'task_id': tid, 'exception': res[1]}
+            return pickle.dumps(result_package)
+        # success = success and res[0]
+        data.append(res[1])
+
+    result = CylonDistResult(data, True)
+    result_package = {'task_id': tid, 'result': serialize(result)}
+    return pickle.dumps(result_package)
+
+
+def _create_exception_result(tid, exception):
+    result_package = {'task_id': tid, 'exception': serialize(exception)}
+    return pickle.dumps(result_package)
 
 
 class Manager(object):
@@ -39,6 +58,7 @@ class Manager(object):
     3. Receive and distribute tasks to workers
     4. Act as a proxy to the Interchange for results.
     """
+
     def __init__(self,
                  comm, rank,
                  task_q_url="tcp://127.0.0.1:50097",
@@ -289,8 +309,6 @@ class Manager(object):
 
             if not self.workers_ready:
                 logger.info(f"waiting for ready msg")
-                # val = 0
-                # val = comm.reduce(val, mpi4py.MPI.SUM, root=0)
                 comm.barrier()
                 self.workers_ready = True
 
@@ -300,15 +318,22 @@ class Manager(object):
                 task = self.pending_task_queue.get()
                 self.workers_ready = False
 
-                logger.info(f"bcast task: {task}")
-                comm.bcast(task, root=0)
+                tid = task['task_id']
 
-                # wait for all results
-                results = comm.gather(None, root=0)
-                logger.info(f"results received {results}")
-                assert len(results) == self.comm.size
-                # temporarily put worker1's result to task
-                self.pending_result_queue.put(results[1])
+                try:
+                    logger.debug(f"task: {task}")
+                    comm.bcast(task, root=0)
+
+                    # wait for all results
+                    results = comm.gather((None, None), root=0)
+                    logger.debug(f"results received {results}")
+                    assert len(results) == self.comm.size
+
+                    logger.debug(f"results: {results}")
+                    self.pending_result_queue.put(_create_final_result(tid, results[1:]))
+
+                except Exception as e_:
+                    self.pending_result_queue.put(_create_exception_result(tid, e_))
 
             if not start:
                 start = time.time()
@@ -384,16 +409,19 @@ def worker(comm: MPI.Comm, rank: int, local_comm: MPI.Comm, local_rank: int):
         try:
             result = execute_task(req['buffer'], comm, local_comm)
         except Exception as e:
-            result_package = {'task_id': tid,
-                              'exception': serialize(RemoteExceptionWrapper(*sys.exc_info()))}
+            # result_package = {'task_id': tid,
+            #                   'exception': serialize(RemoteExceptionWrapper(*sys.exc_info()))}
+            result_package = (False, serialize(RemoteExceptionWrapper(*sys.exc_info())))
             logger.debug(
                 "No result due to exception: {} with result package {}".format(e, result_package))
         else:
-            result_package = {'task_id': tid, 'result': serialize(result)}
+            # result_package = {'task_id': tid, 'result': serialize(result)}
+            result_package = (True, serialize(result))
             logger.debug("Result: {}".format(result))
 
-        pkl_package = pickle.dumps(result_package)
-        comm.gather(pkl_package, root=0)
+        # pkl_package = pickle.dumps(result_package)
+        # comm.gather(pkl_package, root=0)
+        comm.gather(result_package, root=0)
 
 
 def start_file_logger(filename, rank, name='parsl', level=logging.DEBUG, format_string=None):
