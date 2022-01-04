@@ -151,7 +151,7 @@ class CylonExecutor(ExtremeScaleExecutor):
 
         self.ranks_per_node = ranks_per_node
 
-        logger.debug("Initializing ExtremeScaleExecutor")
+        logger.debug(f"Initializing {self.label}")
 
         if not launch_cmd:
             self.launch_cmd = ("mpiexec -np {ranks_per_node} cylon_worker_pool.py "
@@ -160,15 +160,44 @@ class CylonExecutor(ExtremeScaleExecutor):
                                "--result_url={result_url} "
                                "--logdir={logdir} "
                                "--hb_period={heartbeat_period} "
-                               "--hb_threshold={heartbeat_threshold} ")
+                               "--hb_threshold={heartbeat_threshold} "
+                               "--address={address}")
         self.worker_debug = worker_debug
+        self._scaling_enabled = True  # TODO: check this!
 
     def start(self):
         if not _mpi_enabled:
             raise OptionalModuleMissing("mpi4py",
-                                        "Cannot initialize ExtremeScaleExecutor without mpi4py")
+                                        f"Cannot initialize {self.label} without mpi4py")
         else:
             # This is only to stop flake8 from complaining
             logger.debug("MPI version :{}".format(mpi4py.__version__))
 
         super().start()
+
+    def initialize_scaling(self):
+        debug_opts = "--debug" if self.worker_debug else ""
+        l_cmd = self.launch_cmd.format(debug=debug_opts,
+                                       task_url="tcp://{}:{}".format(self.address,
+                                                                     self.worker_task_port),
+                                       result_url="tcp://{}:{}".format(self.address,
+                                                                       self.worker_result_port),
+                                       cores_per_worker=self.cores_per_worker,
+                                       # This is here only to support the exex mpiexec call
+                                       ranks_per_node=self.ranks_per_node,
+                                       nodes_per_block=self.provider.nodes_per_block,
+                                       heartbeat_period=self.heartbeat_period,
+                                       heartbeat_threshold=self.heartbeat_threshold,
+                                       logdir="{}/{}".format(self.run_dir, self.label),
+                                       address=self.address)
+
+        self.launch_cmd = l_cmd
+        logger.debug("Launch command: {}".format(self.launch_cmd))
+
+        logger.debug(f"Starting {self.label} with provider:\n{self.provider}")
+        if hasattr(self.provider, 'init_blocks'):
+            try:
+                self.scale_out(blocks=self.provider.init_blocks)
+            except Exception as e:
+                logger.error("Scaling out failed: {}".format(e))
+                raise e

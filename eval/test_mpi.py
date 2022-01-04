@@ -1,21 +1,16 @@
 import parsl
-from parsl import python_app
-from parsl.config import Config
-
-from parsl.executors import CylonExecutor
-from parsl.serialize import serialize, deserialize
 from parsl.app.cylon import cylon_app, CylonDistResult
+from parsl.config import Config
+from parsl.executors import CylonExecutor
 
 config = Config(
     executors=[
         CylonExecutor(
             label="cylon_test",
-            # provider=LocalProvider(
-            #     launcher=MpiRunLauncher(),
-            # ),
+            address="127.0.0.1",
             ranks_per_node=5,
             worker_debug=True,
-            heartbeat_threshold=30
+            heartbeat_threshold=10
         )
     ],
 )
@@ -24,7 +19,7 @@ parsl.load(config=config)
 
 
 @cylon_app
-def test_func(x_, comm=None, local_comm=None):
+def test_func(x_, comm=None, local_comm=None, **kwargs):
     from mpi4py.MPI import SUM
 
     rank = comm.rank
