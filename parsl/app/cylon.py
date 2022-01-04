@@ -1,13 +1,15 @@
-from abc import ABCMeta, abstractmethod
-from enum import Enum
-from typing import Any, Optional, Union, List, Literal
+from typing import Optional, Union, List, Literal
 
 import typeguard
+import inspect
 
 from parsl import DataFlowKernel, DataFlowKernelLoader
 from parsl.app.python import PythonApp, timeout
 from parsl.executors import CylonExecutor
 from parsl.serialize import deserialize
+
+_cylon_comm_key = "comm"
+_cylon_local_comm_key = "local_comm"
 
 
 class CylonDistResult(object):
@@ -43,7 +45,32 @@ class CylonDistResult(object):
         return '; '.join([self[i] for i in range(self.size)])
 
 
+def _check_args(arg_spec):
+    """
+    Checks if args are valid. Following args are valid
+    foo(..., **kwargs)
+    foo(..., comm=None, **kwargs)
+    foo(..., local_comm=None, **kwargs)
+    foo(..., comm=None, local_comm=None)
+    """
+    return arg_spec.varkw is not None or \
+           (_cylon_comm_key in arg_spec.args and _cylon_local_comm_key in arg_spec.args)
+
+
 class CylonApp(PythonApp):
+    def __init__(self, func, data_flow_kernel=None, cache=False, executors='all',
+                 ignore_for_cache=None, join=False):
+        if not _check_args(inspect.getfullargspec(func)):
+            raise ValueError(f"{func.__name__} args should have either **kwargs or "
+                             f"(\'comm\' and \'local_comm\')")
+
+        super().__init__(func,
+                         data_flow_kernel=data_flow_kernel,
+                         executors=executors,
+                         cache=cache,
+                         ignore_for_cache=ignore_for_cache,
+                         join=join)
+
     def __call__(self, *args, **kwargs):
         invocation_kwargs = {}
         invocation_kwargs.update(self.kwargs)

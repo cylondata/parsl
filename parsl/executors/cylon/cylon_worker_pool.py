@@ -16,7 +16,7 @@ import uuid
 import zmq
 from mpi4py import MPI
 
-from parsl.app.cylon import CylonDistResult
+from parsl.app.cylon import CylonDistResult, _cylon_comm_key, _cylon_local_comm_key
 from parsl.app.errors import RemoteExceptionWrapper
 from parsl.serialize import unpack_apply_message, serialize
 from parsl.version import VERSION as PARSL_VERSION
@@ -357,7 +357,7 @@ def execute_task(bufs, comm_, local_comm_):
 
     f, args, kwargs = unpack_apply_message(bufs, user_ns, copy=False)
 
-    kwargs.update({'comm': comm_, 'local_comm': local_comm_})
+    kwargs.update({_cylon_comm_key: comm_, _cylon_local_comm_key: local_comm_})
 
     fname = getattr(f, '__name__', 'f')
     prefix = "parsl_"
