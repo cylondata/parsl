@@ -2,6 +2,7 @@
 """
 
 import logging
+import os
 
 try:
     import mpi4py
@@ -123,6 +124,8 @@ class CylonExecutor(ExtremeScaleExecutor):
                  provider=LocalProvider(),
                  launch_cmd=None,
                  address="127.0.0.1",
+                 hostfile="",
+                 mpi_params="",
                  worker_ports=None,
                  worker_port_range=(54000, 55000),
                  interchange_port_range=(55000, 56000),
@@ -153,8 +156,36 @@ class CylonExecutor(ExtremeScaleExecutor):
 
         logger.debug(f"Initializing {self.label}")
 
+        self.worker_debug = worker_debug
+        self._scaling_enabled = False
+
+        self.hostfile = hostfile
+        if self.hostfile:
+            if hasattr(self.provider, 'worker_init'):
+                if os.path.exists(self.hostfile):  # hostfile path
+                    with open(hostfile, 'r') as f:
+                        hostfile_content = f.read()
+                else:  # hostfile content
+                    hostfile_content = self.hostfile
+
+                self.provider.worker_init = '''{provider_worker_init}
+cat << CYLON_EOF > hostfile.txt
+{hostfile_content}
+CYLON_EOF
+
+'''.format(provider_worker_init=self.provider.worker_init, hostfile_content=hostfile_content)
+            else:
+                raise ValueError("Hostfile provided to a provider that does provide \'worker_init\'"
+                                 " capability")
+            self.hostfile = "--hostfile hostfile.txt"
+        else:
+            self.hostfile = ""
+
+        self.mpi_params = mpi_params
+
         if not launch_cmd:
-            self.launch_cmd = ("mpiexec -np {ranks_per_node} cylon_worker_pool.py "
+            self.launch_cmd = ("mpiexec " + f"{self.hostfile} {self.mpi_params}" +
+                               " -np {ranks_per_node} cylon_worker_pool.py "
                                "{debug} "
                                "--task_url={task_url} "
                                "--result_url={result_url} "
@@ -162,12 +193,10 @@ class CylonExecutor(ExtremeScaleExecutor):
                                "--hb_period={heartbeat_period} "
                                "--hb_threshold={heartbeat_threshold} "
                                "--address={address}")
-        self.worker_debug = worker_debug
-        self._scaling_enabled = True  # TODO: check this!
 
     def start(self):
         if not _mpi_enabled:
-            raise OptionalModuleMissing("mpi4py",
+            raise OptionalModuleMissing(["mpi4py"],
                                         f"Cannot initialize {self.label} without mpi4py")
         else:
             # This is only to stop flake8 from complaining

@@ -3,6 +3,9 @@ from parsl.app.cylon import cylon_app, CylonDistResult
 from parsl.config import Config
 from parsl.executors import CylonExecutor
 
+host_file_txt = """localhost slots=5
+"""
+
 config = Config(
     executors=[
         CylonExecutor(
@@ -10,7 +13,9 @@ config = Config(
             address="127.0.0.1",
             ranks_per_node=5,
             worker_debug=True,
-            heartbeat_threshold=10
+            heartbeat_threshold=10,
+            # hostfile="nodes.txt"
+            hostfile=host_file_txt
         )
     ],
 )
