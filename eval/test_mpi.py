@@ -2,8 +2,9 @@ import parsl
 from parsl.app.cylon import cylon_app, CylonDistResult
 from parsl.config import Config
 from parsl.executors import CylonExecutor
+from parsl.providers import LocalProvider
 
-host_file_txt = """localhost slots=5
+host_file_txt = """localhost slots=8
 """
 
 config = Config(
@@ -11,11 +12,13 @@ config = Config(
         CylonExecutor(
             label="cylon_test",
             address="127.0.0.1",
-            ranks_per_node=5,
+            ranks_per_node=7,
             worker_debug=True,
             heartbeat_threshold=10,
             # hostfile="nodes.txt"
-            hostfile=host_file_txt
+            hostfile=host_file_txt,
+            mpi_params="--oversubscribe",
+            provider=LocalProvider(worker_init="echo AAAAAAAAAAAAA"),
         )
     ],
 )
