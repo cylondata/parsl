@@ -1,7 +1,7 @@
+import inspect
 from typing import Optional, Union, List, Literal
 
 import typeguard
-import inspect
 
 from parsl import DataFlowKernel, DataFlowKernelLoader
 from parsl.app.python import PythonApp, timeout
@@ -12,7 +12,7 @@ _cylon_comm_key = "comm"
 _cylon_local_comm_key = "local_comm"
 
 
-class CylonDistResult(object):
+class CylonDistResult:
     """
     Container for keeping serialized results from each worker
     """
@@ -22,7 +22,7 @@ class CylonDistResult(object):
 
         Parameters
         ----------
-        data: list ob byte buffers
+        data: list or byte buffers
             serialized data
         success: bool
             success/ failure
@@ -53,11 +53,11 @@ def _check_args(arg_spec):
     foo(..., local_comm=None, **kwargs)
     foo(..., comm=None, local_comm=None)
     """
-    return arg_spec.varkw is not None or \
-           (_cylon_comm_key in arg_spec.args and _cylon_local_comm_key in arg_spec.args)
+    return arg_spec.varkw is not None or (
+            _cylon_comm_key in arg_spec.args and _cylon_local_comm_key in arg_spec.args)
 
 
-class CylonApp(PythonApp):
+class CylonBspApp(PythonApp):
     def __init__(self, func, data_flow_kernel=None, cache=False, executors='all',
                  ignore_for_cache=None, join=False):
         if not _check_args(inspect.getfullargspec(func)):
@@ -103,12 +103,12 @@ class CylonApp(PythonApp):
 
 
 @typeguard.typechecked
-def cylon_app(function=None,
-              data_flow_kernel: Optional[DataFlowKernel] = None,
-              cache: bool = False,
-              executors: Union[List[str], Literal['all']] = 'all',
-              ignore_for_cache: Optional[List[str]] = None,
-              join: bool = False):
+def cylon_bsp_app(function=None,
+                  data_flow_kernel: Optional[DataFlowKernel] = None,
+                  cache: bool = False,
+                  executors: Union[List[str], Literal['all']] = 'all',
+                  ignore_for_cache: Optional[List[str]] = None,
+                  join: bool = False):
     """Decorator function for making python apps.
 
     Parameters
@@ -134,15 +134,45 @@ def cylon_app(function=None,
 
     def decorator(func):
         def wrapper(f):
-            return CylonApp(f,
-                            data_flow_kernel=data_flow_kernel,
-                            cache=cache,
-                            executors=executors,
-                            ignore_for_cache=ignore_for_cache,
-                            join=join)
+            return CylonBspApp(f,
+                               data_flow_kernel=data_flow_kernel,
+                               cache=cache,
+                               executors=executors,
+                               ignore_for_cache=ignore_for_cache,
+                               join=join)
 
         return wrapper(func)
 
     if function is not None:
         return decorator(function)
     return decorator
+
+
+class CylonRemoteResult:
+    """
+    Container for keeping serialized results from each worker
+    """
+
+    def __init__(self, tid, success: bool):
+        """
+
+        Parameters
+        ----------
+        tid: list ob byte buffers
+            serialized data
+        success: bool
+            success/ failure
+        """
+        self.tid_ = tid
+        self.success_ = success
+
+    @property
+    def tid(self):
+        return self.tid_
+
+    @property
+    def is_ok(self):
+        return self.success_
+
+    def __str__(self) -> str:
+        return f'CylonRemoteResult[tid:{self.tid_}]:{self.success_}'

@@ -1,5 +1,5 @@
 import parsl
-from parsl.app.cylon import cylon_app, CylonDistResult
+from parsl.app.cylon import cylon_bsp_app, CylonDistResult
 from parsl.config import Config
 from parsl.executors import CylonExecutor
 from parsl.providers import LocalProvider
@@ -26,7 +26,7 @@ config = Config(
 parsl.load(config=config)
 
 
-@cylon_app
+@cylon_bsp_app
 def test_func(x_, comm=None, local_comm=None, **kwargs):
     from mpi4py.MPI import SUM
 
@@ -48,7 +48,7 @@ def test_func(x_, comm=None, local_comm=None, **kwargs):
     return out + 100 * local_rank
 
 
-@cylon_app
+@cylon_bsp_app
 def test_func2(x_: CylonDistResult, y_: CylonDistResult, **kwargs):
     # import time
     # time.sleep(2)  # Sleep for 2 seconds
